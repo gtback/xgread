@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
+from importlib.metadata import PackageNotFoundError, version as _pkg_version
 from pathlib import Path
+
+try:
+    __version__ = _pkg_version("xgread")
+except PackageNotFoundError:  # not installed (e.g. running from a source checkout)
+    __version__ = "0.0.0+unknown"
 
 from ._archive import open_archive
 from ._parser import RICH_HDR_SIZE, parse_rich_header, parse_xg_stream
@@ -22,6 +28,7 @@ from .models import (
 )
 
 __all__ = [
+    "__version__",
     "read",
     "read_xgp",
     "read_xg",

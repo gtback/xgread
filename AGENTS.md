@@ -53,3 +53,8 @@ will be added or linked to later.
 ```sh
 pytest tests/
 ```
+
+## For human contributors
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for dev setup, the test/type-check
+commands, the offset rule, and the changelog/versioning expectations.

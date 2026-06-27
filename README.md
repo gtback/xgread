@@ -14,7 +14,7 @@ presentation and "what counts as a blunder" all live in downstream consumers.
 pip install -e .
 ```
 
-Pure Python, requires **Python 3.9+**, no runtime dependencies. (`pytest` is an
+Pure Python, requires **Python 3.10+**, no runtime dependencies. (`pytest` is an
 optional dev dependency.)
 
 ## Quick start

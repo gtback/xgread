@@ -6,8 +6,31 @@ build-backend = "hatchling.build"
 name = "xgread"
 version = "0.1.0"
 description = "Read eXtremeGammon .xg and .xgp match files"
-requires-python = ">=3.9"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Greg Back", email = "git@gregback.net" }]
+keywords = ["backgammon", "extremegammon", "xg", "xgp", "parser"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Games/Entertainment :: Board Games",
+    "Typing :: Typed",
+]
 dependencies = []
 
+[project.urls]
+Homepage = "https://github.com/gtback/xgread"
+Repository = "https://github.com/gtback/xgread"
+Changelog = "https://github.com/gtback/xgread/blob/main/CHANGELOG.md"
+
 [project.optional-dependencies]
-dev = ["pytest"]
+dev = ["pytest", "mypy"]
