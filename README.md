@@ -51,9 +51,37 @@ for game in match.games:
 | `MoveCandidate` | One engine-ranked candidate (`moves` + `evaluation`), best-first.     |
 | `Evaluation`    | 7-element win/gammon/backgammon + equity vector from the XG engine.   |
 | `Position`      | 26-slot board from the on-roll player's point of view.                |
+| `Decision`      | A move/cube decision plus context, with its canonical `xgid` string.  |
 
 A game's `events` is an ordered tuple of `Move` and `CubeAction` objects;
 branch on type while iterating.
+
+Each `MoveCandidate` also carries `equity_loss` — the equity it gives up versus the
+engine's best move (`candidates[0]`), so it is `0.0` for that move.
+
+## XGID and match identity
+
+`xgread` derives two canonical strings that are pure functions of the played match:
+
+```python
+match = xgread.read("game.xg")
+
+# A stable, opaque id for the whole match. Derived only from the moves, dice, cube
+# actions, and score progression — never from analysis — so it is unchanged by
+# re-analysis at a different ply.
+print(match.identity_hash)
+
+# Every decision, in order, with its XGID (the standard eXtremeGammon position id).
+for d in match.decisions():
+    print(d.game_number, d.move_number, d.xgid)
+```
+
+`Game.moves`, `Game.cube_actions`, and `Game.position_after(n)` provide structural
+traversal over a single game.
+
+Both the XGID encoding and the identity-hash form are **frozen, versioned public
+contracts**: changing them re-keys consumers' stored ids, so such changes are
+treated as breaking (see [`CHANGELOG.md`](CHANGELOG.md)).
 
 ## Tests
 

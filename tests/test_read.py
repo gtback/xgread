@@ -114,6 +114,47 @@ class TestReadXg:
         files = open_archive(data[RICH_HDR_SIZE + thumb_size:])
         assert len(files["temp.xg"]) % SAVE_REC_SIZE == 0
 
+    def test_decisions_yield_well_formed_xgids(self):
+        from xgread import Move
+        n = 0
+        for d in self.match.decisions():
+            n += 1
+            assert d.xgid.startswith("XGID=")
+            body = d.xgid[len("XGID="):]
+            position, *fields = body.split(":")
+            assert len(position) == 26
+            assert len(fields) == 9            # cube..maxcube
+            assert fields[2] == "1"            # turn: always the mover's perspective
+            dice = fields[3]
+            if isinstance(d.event, Move):
+                assert dice != "00" and len(dice) == 2
+            else:
+                assert dice == "00"
+        assert n > 0
+
+    def test_identity_hash_stable_across_reparse(self):
+        again = xgread.read(str(XG_PATH))
+        assert self.match.identity_hash == again.identity_hash
+
+    def test_equity_loss_relative_to_best(self):
+        for game in self.match.games:
+            for move in game.moves:
+                if not move.candidates:
+                    continue
+                best_eq = move.candidates[0].evaluation.equity
+                assert move.candidates[0].equity_loss == pytest.approx(0.0)
+                for c in move.candidates:
+                    assert c.equity_loss == pytest.approx(best_eq - c.evaluation.equity)
+
+    def test_position_after_matches_move(self):
+        for game in self.match.games:
+            moves = game.moves
+            for i, move in enumerate(moves, start=1):
+                assert game.position_after(i) == move.position_after
+            if moves:
+                with pytest.raises(IndexError):
+                    game.position_after(len(moves) + 1)
+
 
 # ── Unit tests (no sample files needed) ──────────────────────────────────────
 
@@ -170,3 +211,141 @@ class TestHelpers:
         ev = xgread.Evaluation.from_seq(vals)
         assert ev.lose_bg == pytest.approx(0.1)
         assert ev.equity == pytest.approx(0.55)
+
+
+# ── XGID encoding (no sample files needed) ───────────────────────────────────
+
+# Standard backgammon starting position from the on-roll player's POV.
+_START_POINTS = (0, -2, 0, 0, 0, 0, 5, 0, 3, 0, 0, 0, -5,
+                 5, 0, 0, 0, -3, 0, -5, 0, 0, 0, 0, 2, 0)
+_START_XGID_POS = "-b----E-C---eE---c-e----B-"
+
+
+class TestXgid:
+    def test_encode_standard_start(self):
+        from xgread._xgid import encode_position
+        assert encode_position(_START_POINTS) == _START_XGID_POS
+
+    def test_encode_requires_26_slots(self):
+        from xgread._xgid import encode_position
+        with pytest.raises(ValueError):
+            encode_position((0, 0, 0))
+
+    def test_encode_player_and_opponent_chars(self):
+        from xgread._xgid import encode_position
+        pts = [0] * 26
+        pts[3] = 4      # 4 on-roll checkers -> 'D'
+        pts[20] = -1    # 1 opponent checker -> 'a'
+        s = encode_position(tuple(pts))
+        assert s[3] == "D"
+        assert s[20] == "a"
+
+    def test_build_xgid_standard_start_money_cube_decision(self):
+        from xgread._xgid import build_xgid
+        xgid = build_xgid(
+            points=_START_POINTS,
+            cube_value=0,
+            dice=None,
+            player_score=0,
+            opp_score=0,
+            match_length=0,
+            crawford_game=False,
+            jacoby=False,
+            beaver=False,
+            cube_limit=10,
+        )
+        assert xgid == f"XGID={_START_XGID_POS}:0:0:1:00:0:0:0:0:10"
+
+    def test_build_xgid_dice_high_die_first(self):
+        from xgread._xgid import build_xgid
+        xgid = build_xgid(
+            points=_START_POINTS,
+            cube_value=0,
+            dice=(1, 3),
+            player_score=2,
+            opp_score=4,
+            match_length=7,
+            crawford_game=False,
+            jacoby=False,
+            beaver=False,
+            cube_limit=10,
+        )
+        # dice rendered high-first; fields after position: cube/pos/turn/dice/scores/...
+        assert xgid == f"XGID={_START_XGID_POS}:0:0:1:31:2:4:0:7:10"
+
+    def test_build_xgid_cube_owner_sign(self):
+        from xgread._xgid import build_xgid
+        owned = build_xgid(
+            points=_START_POINTS, cube_value=1, dice=None,
+            player_score=0, opp_score=0, match_length=7,
+            crawford_game=False, jacoby=False, beaver=False, cube_limit=10,
+        )
+        opp = build_xgid(
+            points=_START_POINTS, cube_value=-1, dice=None,
+            player_score=0, opp_score=0, match_length=7,
+            crawford_game=False, jacoby=False, beaver=False, cube_limit=10,
+        )
+        assert owned.split(":")[1:3] == ["1", "1"]   # cube=2^1, owner=+1
+        assert opp.split(":")[1:3] == ["1", "-1"]    # cube=2^1, owner=-1
+
+    def test_build_xgid_money_rules_flag(self):
+        from xgread._xgid import build_xgid
+        xgid = build_xgid(
+            points=_START_POINTS, cube_value=0, dice=None,
+            player_score=0, opp_score=0, match_length=0,
+            crawford_game=False, jacoby=True, beaver=True, cube_limit=10,
+        )
+        assert xgid.split(":")[7] == "3"  # jacoby(1) + beaver(2)
+
+
+class TestEquityLoss:
+    def test_best_candidate_is_zero(self):
+        from xgread.models import Evaluation, MoveCandidate
+        c = MoveCandidate(moves=(), evaluation=Evaluation.from_seq((0,) * 7))
+        assert c.equity_loss == 0.0
+
+
+# ── Match identity hash (no sample files needed) ─────────────────────────────
+
+def _tiny_match(score1: int, score2: int, *, error: float = 0.0):
+    """Build a minimal one-game Match with a single checker move."""
+    from xgread.models import (
+        Game, GameHeader, Match, MatchHeader, Move, Position,
+    )
+    pos = Position(_START_POINTS)
+    move = Move(
+        player=1, position_before=pos, position_after=pos, dice=(3, 1),
+        moves=(), cube_value=0, error=error, luck=error,
+        analysis=None, candidates=(), flagged=False, comment_index=-1,
+    )
+    header = MatchHeader(
+        player1="A", player2="B", match_length=7, variation=0, crawford=True,
+        jacoby=False, beaver=False, elo1=0.0, elo2=0.0, experience1=0,
+        experience2=0, date=None, event="", location="", round_name="",
+        game_mode=0, version=24, magic=0x494C4D44, site_id=0, cube_limit=10,
+        comment_header_index=-1, comment_footer_index=-1,
+    )
+    gh = GameHeader(
+        score1=score1, score2=score2, crawford_apply=False,
+        initial_position=pos, game_number=1, in_progress=False,
+        n_auto_doubles=0, comment_index=-1,
+    )
+    game = Game(header=gh, events=(move,), footer=None)
+    return Match(header=header, games=(game,), footer=None, thumbnail=b"")
+
+
+class TestIdentityHash:
+    def test_versioned_prefix(self):
+        h = _tiny_match(0, 0).identity_hash
+        assert h.startswith("xgmid1-")
+
+    def test_stable_for_identical_play(self):
+        assert _tiny_match(0, 0).identity_hash == _tiny_match(0, 0).identity_hash
+
+    def test_score_changes_hash(self):
+        # Same moves, different per-game score => different identity.
+        assert _tiny_match(0, 0).identity_hash != _tiny_match(2, 0).identity_hash
+
+    def test_analysis_does_not_change_hash(self):
+        # Only analysis fields differ (error/luck) => same identity.
+        assert _tiny_match(0, 0).identity_hash == _tiny_match(0, 0, error=-0.5).identity_hash

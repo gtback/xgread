@@ -9,6 +9,7 @@ All data is little-endian.
 from __future__ import annotations
 
 import struct
+from dataclasses import replace
 from datetime import datetime, timedelta
 
 from .models import (
@@ -507,6 +508,13 @@ def _parse_all_candidates(rec: bytes, base: int, n_moves: int) -> tuple[MoveCand
             break
         vals = struct.unpack_from("<7f", rec, eval_offset)
         result.append(MoveCandidate(moves=tuple(details), evaluation=Evaluation.from_seq(vals)))
+
+    # Candidates are stored best-first; fill in equity lost vs. the best move.
+    if result:
+        best_equity = result[0].evaluation.equity
+        result = [
+            replace(c, equity_loss=best_equity - c.evaluation.equity) for c in result
+        ]
     return tuple(result)
 
 

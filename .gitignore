@@ -20,8 +20,6 @@ venv/
 .coverage
 htmlcov/
 
-# Example consumers kept local-only (reintroduced later)
-examples/
 
 # Local sample fixtures (personal match data, not distributed)
 tests/sample.xg*

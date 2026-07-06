@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime
+
+MONEY_MATCH_LENGTH = 99999  # MatchHeader.match_length sentinel for money sessions
 
 
 @dataclass(frozen=True)
@@ -46,6 +49,11 @@ class MoveCandidate:
     """One engine-ranked candidate move and its evaluation (best-first order)."""
     moves: tuple[MoveDetail, ...]
     evaluation: Evaluation
+    equity_loss: float = 0.0  # equity given up vs. the engine's best move
+    # (candidates[0].equity - this.equity); 0.0 for the best candidate. Usually
+    # >= 0, but XG lists candidates in evaluation tiers (deepest ply first, sorted
+    # within a tier), so a shallower-ply candidate can show a higher — less
+    # reliable — raw equity and a slightly negative loss.
 
 
 @dataclass(frozen=True)
@@ -111,6 +119,25 @@ class Game:
     events: tuple[Move | CubeAction, ...]
     footer: GameFooter | None  # None for in-progress games
 
+    @property
+    def moves(self) -> tuple[Move, ...]:
+        """The checker-play decisions in this game, in order."""
+        return tuple(e for e in self.events if isinstance(e, Move))
+
+    @property
+    def cube_actions(self) -> tuple[CubeAction, ...]:
+        """The cube decisions in this game, in order."""
+        return tuple(e for e in self.events if isinstance(e, CubeAction))
+
+    def position_after(self, move_number: int) -> Position:
+        """Return the board position after the *move_number*-th checker move (1-based)."""
+        moves = self.moves
+        if move_number < 1 or move_number > len(moves):
+            raise IndexError(
+                f"move_number {move_number} out of range (1..{len(moves)})"
+            )
+        return moves[move_number - 1].position_after
+
 
 @dataclass(frozen=True)
 class MatchHeader:
@@ -151,11 +178,79 @@ class MatchFooter:
 
 
 @dataclass(frozen=True)
+class Decision:
+    """A single decision (move or cube action) with the context needed for its XGID.
+
+    The match score and match settings that an XGID needs live above the individual
+    ``Move`` / ``CubeAction``, so they are gathered here while traversing the match.
+    """
+    game_number: int                  # 1-based
+    move_number: int                  # 1-based index among the game's events
+    score1: int                       # player1 match points during this game
+    score2: int                       # player2 match points during this game
+    event: Move | CubeAction
+    xgid: str
+
+
+@dataclass(frozen=True)
 class Match:
     header: MatchHeader
     games: tuple[Game, ...]
     footer: MatchFooter | None
     thumbnail: bytes                  # raw JPG bytes; empty if not present
+
+    @property
+    def identity_hash(self) -> str:
+        """A stable, opaque digest identifying the *played* match.
+
+        Derived only from moves, dice, cube actions, and the per-game score
+        progression — never from analysis output — so it is unchanged by
+        re-analysis. See ``xgread._identity`` for the (versioned, frozen) canonical
+        form. The same moves played at a different score yield a different hash.
+        """
+        from ._identity import match_identity
+
+        return match_identity(self)
+
+    def decisions(self) -> Iterator[Decision]:
+        """Yield every decision in the match, each with its canonical XGID."""
+        from ._xgid import build_xgid
+
+        match_length = self.header.match_length
+        xgid_match_length = 0 if match_length == MONEY_MATCH_LENGTH else match_length
+
+        for game in self.games:
+            score1, score2 = game.header.score1, game.header.score2
+            for move_number, event in enumerate(game.events, start=1):
+                if isinstance(event, Move):
+                    points = event.position_before.points
+                    dice: tuple[int, int] | None = event.dice
+                else:
+                    points = event.position.points
+                    dice = None
+                on_roll = event.player
+                player_score = score1 if on_roll == 1 else score2
+                opp_score = score2 if on_roll == 1 else score1
+                xgid = build_xgid(
+                    points=points,
+                    cube_value=event.cube_value,
+                    dice=dice,
+                    player_score=player_score,
+                    opp_score=opp_score,
+                    match_length=xgid_match_length,
+                    crawford_game=game.header.crawford_apply,
+                    jacoby=self.header.jacoby,
+                    beaver=self.header.beaver,
+                    cube_limit=self.header.cube_limit,
+                )
+                yield Decision(
+                    game_number=game.header.game_number,
+                    move_number=move_number,
+                    score1=score1,
+                    score2=score2,
+                    event=event,
+                    xgid=xgid,
+                )
 
 
 # ── Lookup tables ────────────────────────────────────────────────────────────

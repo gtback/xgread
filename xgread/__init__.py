@@ -14,6 +14,7 @@ from ._archive import open_archive
 from ._parser import RICH_HDR_SIZE, parse_rich_header, parse_xg_stream
 from .models import (
     CubeAction,
+    Decision,
     Evaluation,
     Game,
     GameFooter,
@@ -45,6 +46,7 @@ __all__ = [
     "MoveDetail",
     "Position",
     "Evaluation",
+    "Decision",
 ]
 
 
