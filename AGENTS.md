@@ -19,6 +19,27 @@ This file collects the context that isn't obvious from reading the code.
 - `tests/` — `pytest` smoke tests; `sample.xg` / `sample.xgp` fixtures.
 - `examples/` — tracked example scripts that use `xgread` (`analyze_xg.py`).
 
+## Public API cheat-sheet (so you needn't spelunk `models.py`)
+
+Entry: `xgread.read(path)` → `Match` (auto-detects `.xg`/`.xgp` from bytes).
+
+- `Match`: `.header`, `.games`, `.footer`, `.thumbnail`; `.identity_hash` (stable,
+  versioned, analysis-independent match id); `.decisions()` → `Decision` per move/cube.
+- `Decision`: `.game_number`, `.move_number` (**counts cube actions too**), `.score1/2`,
+  `.event` (`Move | CubeAction`), `.xgid`.
+- `Game`: `.header`, `.events` (`Move | CubeAction`, ordered), `.footer`; `.moves`,
+  `.cube_actions`, `.position_after(n)`.
+- `Move`: `.player`, `.position_before/after`, `.dice`, `.moves`, `.cube_value`,
+  `.error`/`.luck` (`NOT_ANALYSED` sentinel), `.candidates` (best-first `MoveCandidate`),
+  `.flagged`; derived: `.is_analysed`, `.played_index` (`int | None`), `.analysis`
+  (played move's `Evaluation`), `.notation`.
+- `MoveCandidate`: `.moves`, `.evaluation`, `.equity_loss` (vs `candidates[0]`; `0.0` for it).
+- `CubeAction`: `.player`, `.doubled`, `.took` (`bool | None`), `.cube_value`,
+  `.error_double`/`.error_take`, `.no_double_equity`/`.double_take_equity`/
+  `.double_drop_equity`; derived `.is_analysed`.
+- Helpers: `xgread.format_moves(moves, position)` (notation for any move set),
+  `xgread.NOT_ANALYSED`.
+
 ## Format references
 
 The binary layout is decoded from the official XG format docs at
@@ -44,12 +65,34 @@ turn field is always `+1`.
 - Player/event names: Unicode fields are used when `version >= 24`, otherwise the
   parser falls back to the older ANSI `ShortString` fields.
 
+## Field-semantics traps (the record lies about what some fields mean)
+
+- **`CompChoice` is the *computer's* recommended move, not the played move.** The played
+  move lives only as raw checker hops (`Move.moves`); `Move.played_index` recovers which
+  candidate that is by matching. (A past bug populated `Move.analysis` from `CompChoice`.)
+- **`Evaluation` is XG's raw *cumulative* 7-vector** (`lose_bg…win_bg, equity`), not
+  discrete win/gammon/bg splits. Don't present these as probabilities without deriving.
+- **`MoveDetail.die` is a destination point**, not a die value (named after XG's raw field).
+- **`cube_value` is log-encoded**: `0`=centre, `+n`=player owns `2^n`, `-n`=opp owns.
+
 ## Conventions
 
 - Relative imports inside the package (`.models`, `._parser`, `._archive`).
 - Models are frozen dataclasses.
 - Match the surrounding comment density and idiom — `_parser.py` documents its
   offsets inline because they're easy to get wrong.
+
+### Adding a derivation (the `identity_hash` / `notation` / `played_index` pattern)
+
+A new canonical derivation should be **a `@property` on the model** (or a small pure
+function in a `_*.py` module), with a **lazy import** inside the property to avoid import
+cycles (see `Match.identity_hash`, `Move.notation`). Then:
+1. Export any public function from `__init__.py` and add it to `__all__`.
+2. Update the README data-model section and add a `CHANGELOG.md` entry.
+3. Validate against real data: the `sample.xg` invariant tests (e.g.
+   `test_played_index_identifies_played_move`) are the pattern — assert a property against
+   an independent signal, not against itself.
+4. Run **both** `pytest` and `mypy` (the package ships typed).
 
 ## Scope rule
 
@@ -76,6 +119,7 @@ will be added or linked to later.
 
 ```sh
 pytest tests/
+mypy xgread/ examples/
 ```
 
 ## For human contributors
