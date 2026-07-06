@@ -59,6 +59,13 @@ branch on type while iterating.
 Each `MoveCandidate` also carries `equity_loss` — the equity it gives up versus the
 engine's best move (`candidates[0]`), so it is `0.0` for that move.
 
+For a `Move`, `played_index` is the index into `candidates` of the move actually
+played (`None` if unanalysed), `analysis` is the played move's `Evaluation`, and
+`notation` renders the played move in standard notation (`13/7*`). The
+`xgread.format_moves(moves, position)` helper renders any move set (e.g. a
+candidate's) the same way. `Move.is_analysed` / `CubeAction.is_analysed` report
+whether the XG engine evaluated the decision.
+
 ## XGID and match identity
 
 `xgread` derives two canonical strings that are pure functions of the played match:

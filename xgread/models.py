@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 MONEY_MATCH_LENGTH = 99999  # MatchHeader.match_length sentinel for money sessions
+NOT_ANALYSED = -1000.0  # sentinel for unanalysed equity/luck/error fields
 
 
 @dataclass(frozen=True)
@@ -67,10 +68,43 @@ class Move:
     cube_value: int                   # cube state: 0=centre, +n=player owns 2^n, -n=opp owns 2^n
     error: float                      # equity error; -1000.0 = not analysed
     luck: float                       # luck of the roll; -1000.0 = not analysed
-    analysis: Evaluation | None       # engine evaluation of played move
     candidates: tuple[MoveCandidate, ...]  # all engine candidates, best-first; empty if not analysed
     flagged: bool
     comment_index: int                # index into .xgc file; -1 = none
+
+    @property
+    def is_analysed(self) -> bool:
+        """Whether the XG engine evaluated this move (equity error is present)."""
+        return self.error != NOT_ANALYSED
+
+    @property
+    def played_index(self) -> int | None:
+        """Index into ``candidates`` of the move actually played.
+
+        ``None`` when unanalysed, or (rarely) when the played move is a transposition
+        XG did not list as a candidate. The file does not store this index directly —
+        it records the played move and the engine's ranked candidates separately — so
+        it is recovered by matching the played move against the candidates.
+        """
+        from ._notation import played_candidate_index
+
+        return played_candidate_index(self.moves, self.candidates, self.position_before)
+
+    @property
+    def analysis(self) -> Evaluation | None:
+        """The XG engine's evaluation of the *played* move, or ``None``.
+
+        ``None`` when unanalysed or the played move is not among ``candidates``.
+        """
+        idx = self.played_index
+        return self.candidates[idx].evaluation if idx is not None else None
+
+    @property
+    def notation(self) -> str:
+        """Standard notation for the played move (e.g. ``13/7*``), from ``position_before``."""
+        from ._notation import format_moves
+
+        return format_moves(self.moves, self.position_before)
 
 
 @dataclass(frozen=True)
@@ -89,6 +123,11 @@ class CubeAction:
     double_drop_equity: float
     flagged: bool
     comment_index: int
+
+    @property
+    def is_analysed(self) -> bool:
+        """Whether the XG engine evaluated the doubling decision."""
+        return self.error_double != NOT_ANALYSED
 
 
 @dataclass(frozen=True)

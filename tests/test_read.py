@@ -155,6 +155,33 @@ class TestReadXg:
                 with pytest.raises(IndexError):
                     game.position_after(len(moves) + 1)
 
+    def test_played_index_identifies_played_move(self):
+        seen = 0
+        for game in self.match.games:
+            for move in game.moves:
+                if not move.is_analysed:
+                    continue
+                pidx = move.played_index
+                if pidx is None:
+                    continue  # rare: played move is a transposition XG did not list
+                seen += 1
+                # played_index points at the candidate whose moves are the ones played
+                cand = move.candidates[pidx]
+                assert xgread.format_moves(cand.moves, move.position_before) == move.notation
+                # analysis is that candidate's evaluation
+                assert move.analysis is cand.evaluation
+                # playing the top candidate <=> zero equity error
+                if pidx == 0:
+                    assert move.error == pytest.approx(0.0)
+        assert seen > 0
+
+    def test_analysis_none_when_unanalysed(self):
+        for game in self.match.games:
+            for move in game.moves:
+                if not move.is_analysed:
+                    assert move.analysis is None
+                    assert move.played_index is None
+
 
 # ── Unit tests (no sample files needed) ──────────────────────────────────────
 
@@ -316,7 +343,7 @@ def _tiny_match(score1: int, score2: int, *, error: float = 0.0):
     move = Move(
         player=1, position_before=pos, position_after=pos, dice=(3, 1),
         moves=(), cube_value=0, error=error, luck=error,
-        analysis=None, candidates=(), flagged=False, comment_index=-1,
+        candidates=(), flagged=False, comment_index=-1,
     )
     header = MatchHeader(
         player1="A", player2="B", match_length=7, variation=0, crawford=True,
@@ -349,3 +376,49 @@ class TestIdentityHash:
     def test_analysis_does_not_change_hash(self):
         # Only analysis fields differ (error/luck) => same identity.
         assert _tiny_match(0, 0).identity_hash == _tiny_match(0, 0, error=-0.5).identity_hash
+
+
+# ── Move notation (no sample files needed) ───────────────────────────────────
+
+class TestNotation:
+    def _pos(self, **points: int):
+        """Position with the given board-index (0=opp bar, 1-24=points, 25=player bar)
+        slots set; e.g. ``i8=2`` puts two on-roll checkers on the 8-point."""
+        from xgread import Position
+        pts = [0] * 26
+        for key, value in points.items():
+            pts[int(key[1:])] = value
+        return Position(tuple(pts))
+
+    def test_two_checkers(self):
+        from xgread import MoveDetail, Position, format_moves
+        pos = Position(_START_POINTS)
+        moves = (MoveDetail(from_point=7, die=4), MoveDetail(from_point=5, die=4))
+        assert format_moves(moves, pos) == "8/5 6/5"
+
+    def test_hit_is_starred(self):
+        from xgread import MoveDetail, format_moves
+        pos = self._pos(i8=2, i5=-1)  # opponent blot on the 5-point
+        assert format_moves((MoveDetail(7, 4),), pos) == "8/5*"
+
+    def test_bar_and_bear_off(self):
+        from xgread import MoveDetail, format_moves
+        pos = self._pos(i25=1, i3=1)
+        assert format_moves((MoveDetail(24, 20),), pos) == "bar/21"
+        assert format_moves((MoveDetail(2, -1),), pos) == "3/off"
+
+    def test_chain_collapses_to_net(self):
+        from xgread import MoveDetail, format_moves
+        pos = self._pos(i24=2)
+        moves = (MoveDetail(23, 17), MoveDetail(17, 12))  # 24/18/13 one checker
+        assert format_moves(moves, pos) == "24/13"
+
+    def test_chain_preserves_intermediate_hit(self):
+        from xgread import MoveDetail, format_moves
+        pos = self._pos(i24=2, i18=-1)  # blot on the 18-point mid-chain
+        moves = (MoveDetail(23, 17), MoveDetail(17, 12))
+        assert format_moves(moves, pos) == "24/18* 18/13"
+
+    def test_empty_is_dance(self):
+        from xgread import Position, format_moves
+        assert format_moves((), Position((0,) * 26)) == "(no moves)"

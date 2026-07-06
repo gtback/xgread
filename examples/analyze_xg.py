@@ -15,8 +15,7 @@ import sys
 from pathlib import Path
 
 import xgread
-from xgread import CubeAction, Move
-from xgread._parser import NOT_ANALYSED
+from xgread import NOT_ANALYSED, CubeAction, Move
 
 # ── Board rendering ───────────────────────────────────────────────────────────
 
@@ -93,85 +92,6 @@ def format_board(pos: xgread.Position, player: int,
     return "\n".join([top_label, *rows, bot_label, bar_line])
 
 
-# ── Move notation ─────────────────────────────────────────────────────────────
-
-def _pt_name(pt: int) -> str:
-    if pt < 0:
-        return "off"
-    if pt == 24:  # player bar in 0-based coordinates
-        return "bar"
-    return str(pt + 1)
-
-
-def format_move_notation(moves: tuple[xgread.MoveDetail, ...], pos_before: xgread.Position | None = None) -> str:
-    if not moves:
-        return "(no moves)"
-
-    if pos_before is None:
-        return " ".join(f"{_pt_name(md.from_point)}/{_pt_name(md.die)}" for md in moves)
-
-    # Working copy of board (PositionEngine: index 0=opp bar, 1-24=points, 25=player bar)
-    board = list(pos_before.points)
-
-    def board_at(pt_0: int) -> int:
-        """Board value at 0-based point index."""
-        if pt_0 < 0 or pt_0 >= 24:
-            return 0
-        return board[pt_0 + 1]
-
-    def apply_move(from_0: int, to_0: int) -> bool:
-        """Move one checker; return True if opponent blot was hit."""
-        src = from_0 + 1  # player bar (from_0=24) → board[25]; regular → board[from_0+1]
-        if 1 <= src <= 25:
-            board[src] -= 1
-        if to_0 < 0:
-            return False  # bearing off — no destination slot to update
-        dst = to_0 + 1
-        if not (1 <= dst <= 24):
-            return False
-        hit = board[dst] == -1
-        if hit:
-            board[dst] = 1
-            board[0] -= 1  # send opponent checker to their bar
-        else:
-            board[dst] += 1
-        return hit
-
-    move_list = sorted(((md.from_point, md.die) for md in moves), key=lambda x: -x[0])
-    n = len(move_list)
-    parts = []
-    i = 0
-
-    while i < n:
-        chain_from = move_list[i][0]
-        cur_to = move_list[i][1]
-
-        # Extend chain: follow the same checker through any number of hops.
-        # Moves may be stored out-of-order (XG records physical play order); scan
-        # ahead for the continuation and swap it into the next slot.
-        # Stop only when hitting an opponent blot at the intermediate point.
-        while cur_to >= 0 and board_at(cur_to) != -1:
-            j = next((k for k in range(i + 1, n) if move_list[k][0] == cur_to), None)
-            if j is None:
-                break
-            move_list[i + 1], move_list[j] = move_list[j], move_list[i + 1]
-            apply_move(move_list[i][0], cur_to)
-            i += 1
-            cur_to = move_list[i][1]
-
-        # Apply the final (or only) segment; detect hit at destination
-        hit = cur_to >= 0 and board_at(cur_to) == -1
-        apply_move(move_list[i][0], cur_to)
-
-        parts.append((chain_from, f"{_pt_name(chain_from)}/{_pt_name(cur_to)}{'*' if hit else ''}"))
-        i += 1
-
-    # Sort segments by from-point descending for canonical ordering.
-    # This makes equivalent moves (same checkers, different storage order) compare equal.
-    parts.sort(key=lambda x: (-x[0], x[1]))
-    return " ".join(seg for _, seg in parts)
-
-
 # ── Error / flag marker ───────────────────────────────────────────────────────
 
 def format_marker(error: float, flagged: bool, threshold: float) -> str:
@@ -233,19 +153,14 @@ def main() -> None:
                 move_num += 1
                 player_name = hdr.player1 if event.player == 1 else hdr.player2
                 pos = event.position_before
-                played = format_move_notation(event.moves, pos)
+                played = xgread.format_moves(event.moves, pos)
 
                 cv = event.cube_value
                 cube_level = (2 ** abs(cv)) if cv != 0 else 1
                 cube_owner = (event.player if cv > 0 else -event.player) if cv != 0 else 0
 
-                # Find which candidate was played by comparing normalized notation
-                # (handles equivalent paths like 13/9 9/7 == 13/11 11/7 == 13/7)
-                played_idx = None
-                for ci, cand in enumerate(event.candidates):
-                    if format_move_notation(cand.moves, pos) == played:
-                        played_idx = ci
-                        break
+                # The played candidate's index is reported directly by the library.
+                played_idx = event.played_index
 
                 best_was_played = played_idx == 0
 
@@ -273,7 +188,7 @@ def main() -> None:
                         best_eq = event.candidates[0].evaluation.equity
                         print(f"  Top {n_show} moves:")
                         for rank, cand in enumerate(event.candidates[:n_show], 1):
-                            notation = format_move_notation(cand.moves, pos)
+                            notation = xgread.format_moves(cand.moves, pos)
                             played_mark = " <-- played" if (rank - 1) == played_idx else ""
                             if rank == 1:
                                 eq_str = f"equity: {cand.evaluation.equity:+.3f}"
@@ -283,7 +198,7 @@ def main() -> None:
                         if not played_in_top:
                             if played_idx is not None:
                                 cand = event.candidates[played_idx]
-                                notation = format_move_notation(cand.moves, pos)
+                                notation = xgread.format_moves(cand.moves, pos)
                                 print(f"    {played_idx + 1}. {notation:<22} equity: {cand.evaluation.equity:+.3f}  ({-cand.equity_loss:+.3f}) <-- played")
                             elif event.error != NOT_ANALYSED:
                                 best_eq_str = f"{best_eq:+.3f}" if event.candidates else "n/a"

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "xgread"
-version = "0.2.0"
+version = "0.3.0"
 description = "Read eXtremeGammon .xg and .xgp match files"
 readme = "README.md"
 requires-python = ">=3.10"

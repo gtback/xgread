@@ -14,6 +14,8 @@ This file collects the context that isn't obvious from reading the code.
   - `_archive.py` — ZLB archive decompression (the `.xg`/`.xgp` container).
   - `_xgid.py` — canonical XGID encoding (`Match.decisions()` uses it).
   - `_identity.py` — the versioned match-identity hash (`Match.identity_hash`).
+  - `_notation.py` — standard move notation (`format_moves`, `Move.notation`) and
+    played-candidate matching (`Move.played_index`).
 - `tests/` — `pytest` smoke tests; `sample.xg` / `sample.xgp` fixtures.
 - `examples/` — tracked example scripts that use `xgread` (`analyze_xg.py`).
 
@@ -56,6 +58,19 @@ derivations that are **pure functions of the format's structure** (canonical,
 objective). It must **not** include presentation/rendering or analysis /
 value-judgment logic — those belong in downstream consumers. Example consumers
 will be added or linked to later.
+
+## Known gaps (deferred, not bugs)
+
+- **`Move.played_index` is recovered by matching**, not read from the file. `CompChoice`
+  in the record is the *computer's* choice, not the played move; the played move is only
+  stored as its raw checker hops. `None` result means the played move wasn't among the
+  listed candidates (a transposition; always near-zero error in practice).
+- **Cube decisions expose only the three scalar equities** (`no_double_equity`,
+  `double_take_equity`, `double_drop_equity`), not the raw `Eval`/`EvalDouble` 7-vectors
+  the record also holds. Surface those if a consumer needs cube-position probabilities.
+- **`MoveDetail.die` is a destination point**, not a die value (named after XG's raw field).
+- **`Decision.move_number` counts cube actions too**, so it is not a pure checker-move
+  ordinal.
 
 ## Verifying changes
 

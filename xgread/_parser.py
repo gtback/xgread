@@ -13,6 +13,7 @@ from dataclasses import replace
 from datetime import datetime, timedelta
 
 from .models import (
+    NOT_ANALYSED,
     CubeAction,
     Evaluation,
     Game,
@@ -42,7 +43,8 @@ TS_MOVE         = 3
 TS_FOOTER_GAME  = 4
 TS_FOOTER_MATCH = 5
 
-NOT_ANALYSED = -1000.0
+# NOT_ANALYSED (-1000.0) is defined in models.py (shared with the public API) and
+# re-exported here for the parser's internal use.
 
 # ── TRichGameHeader ───────────────────────────────────────────────────────────
 #
@@ -269,7 +271,9 @@ def _parse_move(rec: bytes) -> Move:
     # ErrMove (double): Played(1) at 2308, then 2309→align8→2312
     err_move, = struct.unpack_from("<d", rec, 2312)
     err_luck, = struct.unpack_from("<d", rec, 2320)
-    comp_choice, = struct.unpack_from("<i", rec, 2328)
+    # CompChoice (integer) at 2328 is the *computer's* recommended move, not the one
+    # played, so it is not read here. The played move is in `move_details`; which
+    # candidate that corresponds to is derived by Move.played_index.
     # Flagged (Boolean) at 2520; CommentMove (integer): 2521→align4→2524
     flagged, = struct.unpack_from("<?", rec, 2520)
     comment_move, = struct.unpack_from("<i", rec, 2524)
@@ -277,8 +281,6 @@ def _parse_move(rec: bytes) -> Move:
     # Parse the moves list (terminated by -1)
     move_details = _parse_move_list(raw_moves)
 
-    # Extract analysis for the played move and all candidates from DataMoves.Eval
-    analysis = _engine_eval_for_move(rec, _DMOVES_BASE, comp_choice, n_move_eval)
     candidates = _parse_all_candidates(rec, _DMOVES_BASE, n_move_eval)
 
     return Move(
@@ -290,7 +292,6 @@ def _parse_move(rec: bytes) -> Move:
         cube_value=cube_a,
         error=err_move,
         luck=err_luck,
-        analysis=analysis,
         candidates=candidates,
         flagged=flagged,
         comment_index=comment_move,
@@ -479,21 +480,6 @@ _ESB_EVAL_LEVEL_OFFSET = _ESB_MOVES_OFFSET + 32 * 8          # 900+256=1156
 _ESB_EVAL_OFFSET       = _ESB_EVAL_LEVEL_OFFSET + 32 * 4     # 1156+128=1284
 _ESB_CHOICE0_OFFSET    = 2182
 _ESB_CHOICE3_OFFSET    = 2183
-
-
-def _engine_eval_for_move(
-    rec: bytes, base: int, comp_choice: int, n_moves: int
-) -> Evaluation | None:
-    """Extract the Evaluation for the played move from EngineStructBestMove."""
-    if n_moves <= 0 or comp_choice < 1 or comp_choice > 32:
-        return None
-    # Eval[comp_choice, 0..6]: comp_choice is 1-based index
-    idx = comp_choice - 1
-    eval_start = base + _ESB_EVAL_OFFSET + idx * 7 * 4
-    if eval_start + 28 > len(rec):
-        return None
-    vals = struct.unpack_from("<7f", rec, eval_start)
-    return Evaluation.from_seq(vals)
 
 
 def _parse_all_candidates(rec: bytes, base: int, n_moves: int) -> tuple[MoveCandidate, ...]:

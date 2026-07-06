@@ -11,8 +11,10 @@ except PackageNotFoundError:  # not installed (e.g. running from a source checko
     __version__ = "0.0.0+unknown"
 
 from ._archive import open_archive
+from ._notation import format_moves
 from ._parser import RICH_HDR_SIZE, parse_rich_header, parse_xg_stream
 from .models import (
+    NOT_ANALYSED,
     CubeAction,
     Decision,
     Evaluation,
@@ -33,6 +35,8 @@ __all__ = [
     "read",
     "read_xgp",
     "read_xg",
+    "format_moves",
+    "NOT_ANALYSED",
     # models
     "Match",
     "MatchHeader",

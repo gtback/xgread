@@ -12,6 +12,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-06
+
+### Added
+- **`Move.played_index`** — the index into `Move.candidates` of the move actually
+  played (`None` when unanalysed, or in the rare case where the played move is a
+  transposition XG did not list as a candidate). The file does not store this index;
+  it is recovered by matching the played move against the candidates.
+- **`Move.notation`** and the public **`format_moves(moves, position)`** function —
+  standard backgammon move notation (e.g. `13/7*`, chains collapsed to the net move,
+  hits marked with `*`, `bar`/`off` handled). A pure, objective derivation, so it
+  lives in the library rather than each consumer.
+- **`Move.is_analysed` / `CubeAction.is_analysed`** convenience properties, and the
+  **`NOT_ANALYSED`** sentinel (`-1000.0`) is now part of the public API.
+
+### Fixed
+- **`Move.analysis` now returns the evaluation of the *played* move.** Previously it
+  was populated from XG's `CompChoice` field, which is the *computer's* recommended
+  move, not the one played — so on any move where the player did not play the engine's
+  top choice, `analysis` reported the wrong evaluation. It is now derived from
+  `Move.played_index` (and is `None` when the played move is not among the candidates).
+
+### Changed
+- `Move.analysis` is now a derived property rather than a stored field; constructing a
+  `Move` no longer takes an `analysis=` argument.
+
 ## [0.2.0] - 2026-06-27
 
 ### Added
@@ -49,6 +74,7 @@ Initial release.
   exposed via `Evaluation`.
 - `xgread.__version__`.
 
-[Unreleased]: https://github.com/gtback/xgread/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/gtback/xgread/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/gtback/xgread/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/gtback/xgread/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/gtback/xgread/releases/tag/v0.1.0
